@@ -26,6 +26,7 @@ namespace Robust.Client.UserInterface
             TabContainer.SetTabTitle(DebugConsole, "Debug Console");
             TabContainer.SetTabTitle(UI, "User Interface");
             TabContainer.SetTabTitle(Perf, "Profiling");
+            TabContainer.SetTabTitle(TextDecorations, "Text Decorations"); // Added title for the new tab
 
             Stylesheet =
                 new DefaultStylesheet(IoCManager.Resolve<IResourceCache>(), IoCManager.Resolve<IUserInterfaceManager>()).Stylesheet;

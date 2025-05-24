@@ -86,8 +86,15 @@ namespace Robust.Client.UserInterface
             int? breakLine;
             var wordWrap = new WordWrap(maxSizeX);
             var context = new MarkupDrawingContext();
-            context.Font.Push(defaultFont);
-            context.Color.Push(_defaultColor);
+            // Initialize context with defaults for this entry
+            context.CurrentFont = defaultFont;
+            context.CurrentColor = _defaultColor;
+            // FontStack and ColorStack are used by FontTag and ColorTag if they PUSH/POP.
+            // For base values, CurrentFont/CurrentColor are primary.
+            // Ensure these are also on the stack if tags expect to Pop to them.
+            context.FontStack.Push(defaultFont); // So a Pop without a corresponding Push by a tag reverts to base
+            context.ColorStack.Push(_defaultColor);
+
 
             // Go over every node.
             // Nodes can change the markup drawing context and return additional text.
@@ -98,8 +105,8 @@ namespace Robust.Client.UserInterface
                 nodeIndex++;
                 var text = ProcessNode(tagManager, node, context);
 
-                if (!context.Font.TryPeek(out var font))
-                    font = defaultFont;
+                // Use the font from the context, which might have been changed by a tag
+                var font = context.CurrentFont;
 
                 // And go over every character.
                 foreach (var rune in text.EnumerateRunes())
@@ -108,7 +115,11 @@ namespace Robust.Client.UserInterface
                         continue;
 
                     // Uh just skip unknown characters I guess.
-                    if (!font.TryGetCharMetrics(rune, uiScale, out var metrics))
+                    // Pass current font weight, style, and outline thickness from context to GetCharMetrics
+                    if (!font.TryGetCharMetrics(rune, uiScale, out var metrics,
+                                               context.CurrentFontWeight,
+                                               context.CurrentFontStyle,
+                                               context.CurrentOutlineThickness))
                         continue;
 
                     if (ProcessMetric(ref this, metrics, out breakLine))
@@ -156,10 +167,9 @@ namespace Robust.Client.UserInterface
                 if (line is { } l)
                 {
                     src.LineBreaks.Add(l);
-                    if (!context.Font.TryPeek(out var font))
-                        font = defaultFont;
-
-                    src.Height += GetLineHeight(font, uiScale, lineHeightScale);
+                    // Use the font from the context for line height calculation
+                    var fontForLineHeight = context.CurrentFont;
+                    src.Height += GetLineHeight(fontForLineHeight, uiScale, lineHeightScale);
                 }
             }
         }
@@ -177,16 +187,23 @@ namespace Robust.Client.UserInterface
         public readonly void Draw(
             MarkupTagManager tagManager,
             DrawingHandleBase handle,
-            Font defaultFont,
+            Font defaultFont, // Base font, context will hold the current font
             UIBox2 drawBox,
             float verticalOffset,
-            MarkupDrawingContext context,
+            MarkupDrawingContext context, // This context is now pre-initialized by RichTextLabel
             float uiScale,
             float lineHeightScale = 1)
         {
-            context.Clear();
-            context.Color.Push(_defaultColor);
-            context.Font.Push(defaultFont);
+            // context.Clear() was here, but RichTextLabel now initializes it.
+            // We need to ensure the base default color and font are set correctly if not already.
+            // RichTextLabel sets context.CurrentFont.
+            // Let's ensure CurrentColor is also set if not by RichTextLabel.
+            // MarkupDrawingContext defaults CurrentColor to White, _defaultColor from RichTextEntry might be different.
+            context.CurrentColor = _defaultColor; // Ensure entry's default color is the starting current color
+            context.ColorStack.Clear(); // Clear any previous stack state from other draws if context is reused
+            context.FontStack.Clear();  // Clear any previous stack state
+            context.ColorStack.Push(_defaultColor); // Set base color on stack
+            context.FontStack.Push(context.CurrentFont); // CurrentFont is already set by RichTextLabel, push it as base
 
             var globalBreakCounter = 0;
             var lineBreakIndex = 0;
@@ -198,23 +215,32 @@ namespace Robust.Client.UserInterface
             {
                 nodeIndex++;
                 var text = ProcessNode(tagManager, node, context);
-                if (!context.Color.TryPeek(out var color) || !context.Font.TryPeek(out var font))
-                {
-                    color = _defaultColor;
-                    font = defaultFont;
-                }
+
+                // Use current font, color, and all decoration parameters from the context
+                var currentFont = context.CurrentFont;
+                var currentColor = context.CurrentColor;
+                var currentWeight = context.CurrentFontWeight;
+                var currentStyle = context.CurrentFontStyle;
+                var currentOutlineThickness = context.CurrentOutlineThickness;
+                var currentOutlineColor = context.CurrentOutlineColor;
+                var currentShadowOffset = context.CurrentShadowOffset;
+                var currentShadowColor = context.CurrentShadowColor;
 
                 foreach (var rune in text.EnumerateRunes())
                 {
                     if (lineBreakIndex < LineBreaks.Count &&
                         LineBreaks[lineBreakIndex] == globalBreakCounter)
                     {
-                        baseLine = new Vector2(drawBox.Left, baseLine.Y + GetLineHeight(font, uiScale, lineHeightScale) + controlYAdvance);
+                        // Use currentFont for line height calculation at the break point
+                        baseLine = new Vector2(drawBox.Left, baseLine.Y + GetLineHeight(currentFont, uiScale, lineHeightScale) + controlYAdvance);
                         controlYAdvance = 0;
                         lineBreakIndex += 1;
                     }
 
-                    var advance = font.DrawChar(handle, rune, baseLine, uiScale, color);
+                    var advance = currentFont.DrawChar(handle, rune, baseLine, uiScale, currentColor,
+                                                       currentWeight, currentStyle,
+                                                       currentOutlineThickness, currentOutlineColor,
+                                                       currentShadowOffset, currentShadowColor);
                     baseLine += new Vector2(advance, 0);
 
                     globalBreakCounter += 1;
@@ -228,10 +254,10 @@ namespace Robust.Client.UserInterface
                 control.Visible = true;
 
                 var invertedScale = 1f / uiScale;
-                control.Position = new Vector2(baseLine.X * invertedScale, (baseLine.Y - defaultFont.GetAscent(uiScale)) * invertedScale);
+                control.Position = new Vector2(baseLine.X * invertedScale, (baseLine.Y - context.CurrentFont.GetAscent(uiScale)) * invertedScale);
                 control.Measure(new Vector2(Width, Height));
                 var advanceX = control.DesiredPixelSize.X;
-                controlYAdvance = Math.Max(0f, (control.DesiredPixelSize.Y - GetLineHeight(font, uiScale, lineHeightScale)) * invertedScale);
+                controlYAdvance = Math.Max(0f, (control.DesiredPixelSize.Y - GetLineHeight(context.CurrentFont, uiScale, lineHeightScale)) * invertedScale);
                 baseLine += new Vector2(advanceX, 0);
             }
         }

@@ -8,11 +8,59 @@ using Robust.Shared.Maths;
 namespace Robust.Client.Graphics
 {
     /// <summary>
+    /// Specifies the weight of a font.
+    /// </summary>
+    public enum FontWeight
+    {
+        Normal,
+        Bold
+    }
+
+    /// <summary>
+    /// Specifies the style of a font.
+    /// </summary>
+    public enum FontStyle
+    {
+        Normal,
+        Italic
+    }
+
+    /// <summary>
     ///     A generic font for rendering of text.
     ///     Does not contain properties such as size. Those are specific to children such as <see cref="VectorFont" />
     /// </summary>
     public abstract class Font
     {
+        /// <summary>
+        /// Gets or sets the font weight.
+        /// </summary>
+        public FontWeight FontWeight { get; set; } = FontWeight.Normal;
+
+        /// <summary>
+        /// Gets or sets the font style.
+        /// </summary>
+        public FontStyle FontStyle { get; set; } = FontStyle.Normal;
+
+        /// <summary>
+        /// Gets or sets the outline thickness.
+        /// </summary>
+        public float OutlineThickness { get; set; } = 0f;
+
+        /// <summary>
+        /// Gets or sets the outline color.
+        /// </summary>
+        public Color OutlineColor { get; set; } = Color.Black;
+
+        /// <summary>
+        /// Gets or sets the shadow offset.
+        /// </summary>
+        public Vector2 ShadowOffset { get; set; } = Vector2.Zero;
+
+        /// <summary>
+        /// Gets or sets the shadow color.
+        /// </summary>
+        public Color ShadowColor { get; set; } = Color.Transparent;
+
         /// <summary>
         ///     The maximum amount a glyph goes above the baseline, in pixels.
         /// </summary>
@@ -54,7 +102,14 @@ namespace Robust.Client.Graphics
         /// <returns>How much to advance the cursor to draw the next character.</returns>
         public abstract float DrawChar(
             DrawingHandleBase handle, Rune rune, Vector2 baseline, float scale,
-            Color color, bool fallback=true);
+            Color color,
+            FontWeight fontWeight = FontWeight.Normal,
+            FontStyle fontStyle = FontStyle.Normal,
+            float outlineThickness = 0f,
+            Color outlineColor = default,
+            Vector2 shadowOffset = default,
+            Color shadowColor = default,
+            bool fallback=true);
 
         /// <summary>
         ///     Gets metrics describing the dimensions and positioning of a single glyph in the font.
@@ -70,14 +125,14 @@ namespace Robust.Client.Graphics
         ///     otherwise the metrics you asked for.
         /// </returns>
         /// <seealso cref="TryGetCharMetrics"/>
-        public abstract CharMetrics? GetCharMetrics(Rune rune, float scale, bool fallback=true);
+        public abstract CharMetrics? GetCharMetrics(Rune rune, float scale, FontWeight fontWeight = FontWeight.Normal, FontStyle fontStyle = FontStyle.Normal, float outlineThickness = 0f, bool fallback=true);
 
         /// <summary>
         ///     Try-pattern version of <see cref="GetCharMetrics"/>.
         /// </summary>
-        public bool TryGetCharMetrics(Rune rune, float scale, out CharMetrics metrics, bool fallback=true)
+        public bool TryGetCharMetrics(Rune rune, float scale, out CharMetrics metrics, FontWeight fontWeight = FontWeight.Normal, FontStyle fontStyle = FontStyle.Normal, float outlineThickness = 0f, bool fallback=true)
         {
-            var maybe = GetCharMetrics(rune, scale);
+            var maybe = GetCharMetrics(rune, scale, fontWeight, fontStyle, outlineThickness, fallback);
             if (maybe.HasValue)
             {
                 metrics = maybe.Value;
@@ -109,15 +164,24 @@ namespace Robust.Client.Graphics
         public override int GetDescent(float scale) => Handle.GetDescent(scale);
         public override int GetLineHeight(float scale) => Handle.GetLineHeight(scale);
 
-        public override float DrawChar(DrawingHandleBase handle, Rune rune, Vector2 baseline, float scale, Color color, bool fallback=true)
+        public override float DrawChar(
+            DrawingHandleBase handle, Rune rune, Vector2 baseline, float scale,
+            Color color,
+            FontWeight fontWeight = FontWeight.Normal,
+            FontStyle fontStyle = FontStyle.Normal,
+            float outlineThickness = 0f,
+            Color outlineColor = default,
+            Vector2 shadowOffset = default,
+            Color shadowColor = default,
+            bool fallback = true)
         {
-            var metrics = Handle.GetCharMetrics(rune, scale);
+            var metrics = Handle.GetCharMetrics(rune, scale, fontWeight, fontStyle, outlineThickness);
             if (!metrics.HasValue)
             {
                 if (fallback && !Rune.IsWhiteSpace(rune))
                 {
                     rune = new Rune('�');
-                    metrics = Handle.GetCharMetrics(rune, scale);
+                    metrics = Handle.GetCharMetrics(rune, scale, fontWeight, fontStyle, outlineThickness);
                     if (!metrics.HasValue)
                         return 0;
                 }
@@ -125,11 +189,47 @@ namespace Robust.Client.Graphics
                     return 0;
             }
 
-            var texture = Handle.GetCharTexture(rune, scale);
+            var texture = Handle.GetCharTexture(rune, scale, fontWeight, fontStyle, outlineThickness);
             if (texture == null)
             {
                 return metrics.Value.Advance;
             }
+
+            // Shadow
+            if (shadowOffset != Vector2.Zero && shadowColor != Color.Transparent)
+            {
+                var shadowBaseline = baseline + shadowOffset;
+                shadowBaseline += new Vector2(metrics.Value.BearingX, -metrics.Value.BearingY);
+                if (handle is DrawingHandleWorld worldHandleShadow)
+                    worldHandleShadow.DrawTextureRect(texture, Box2.FromDimensions(shadowBaseline, texture.Size), shadowColor);
+                else
+                    handle.DrawTexture(texture, shadowBaseline, shadowColor);
+            }
+
+            // Outline
+            if (outlineThickness > 0 && outlineColor != default && outlineColor != Color.Transparent)
+            {
+                // This is a simplified way to "fake" an outline by drawing the character multiple times.
+                // A proper outline would use a stroked glyph from FreeType.
+                // This part will need to be revisited when FreeType stroking is implemented.
+                var outlineOffsets = new Vector2[]
+                {
+                    new Vector2(-outlineThickness, -outlineThickness), new Vector2(0, -outlineThickness), new Vector2(outlineThickness, -outlineThickness),
+                    new Vector2(-outlineThickness, 0),                                                   new Vector2(outlineThickness, 0),
+                    new Vector2(-outlineThickness, outlineThickness), new Vector2(0, outlineThickness), new Vector2(outlineThickness, outlineThickness)
+                };
+
+                foreach (var offset in outlineOffsets)
+                {
+                    var outlineBaseline = baseline + offset;
+                    outlineBaseline += new Vector2(metrics.Value.BearingX, -metrics.Value.BearingY);
+                    if (handle is DrawingHandleWorld worldHandleOutline)
+                        worldHandleOutline.DrawTextureRect(texture, Box2.FromDimensions(outlineBaseline, texture.Size), outlineColor);
+                    else
+                        handle.DrawTexture(texture, outlineBaseline, outlineColor);
+                }
+            }
+
 
             baseline += new Vector2(metrics.Value.BearingX, -metrics.Value.BearingY);
             if(handle is DrawingHandleWorld worldhandle)
@@ -139,11 +239,11 @@ namespace Robust.Client.Graphics
             return metrics.Value.Advance;
         }
 
-        public override CharMetrics? GetCharMetrics(Rune rune, float scale, bool fallback=true)
+        public override CharMetrics? GetCharMetrics(Rune rune, float scale, FontWeight fontWeight = FontWeight.Normal, FontStyle fontStyle = FontStyle.Normal, float outlineThickness = 0f, bool fallback=true)
         {
-            var metrics = Handle.GetCharMetrics(rune, scale);
+            var metrics = Handle.GetCharMetrics(rune, scale, fontWeight, fontStyle, outlineThickness);
             if (metrics == null && !Rune.IsWhiteSpace(rune) && fallback)
-                return Handle.GetCharMetrics(new Rune('�'), scale);
+                return Handle.GetCharMetrics(new Rune('�'), scale, fontWeight, fontStyle, outlineThickness);
             return metrics;
         }
     }
@@ -172,32 +272,42 @@ namespace Robust.Client.Graphics
         public override int GetLineHeight(float scale) => _main.GetLineHeight(scale);
 
         // DrawChar just proxies to the stack, or invokes _main's fallback.
-        public override float DrawChar(DrawingHandleBase handle, Rune rune, Vector2 baseline, float scale, Color color, bool fallback=true)
+        public override float DrawChar(
+            DrawingHandleBase handle, Rune rune, Vector2 baseline, float scale,
+            Color color,
+            FontWeight fontWeight = FontWeight.Normal,
+            FontStyle fontStyle = FontStyle.Normal,
+            float outlineThickness = 0f,
+            Color outlineColor = default,
+            Vector2 shadowOffset = default,
+            Color shadowColor = default,
+            bool fallback = true)
         {
             foreach (var f in Stack)
             {
-                var w = f.DrawChar(handle, rune, baseline, scale, color, fallback: false);
+                // Pass all decoration parameters to the stacked fonts
+                var w = f.DrawChar(handle, rune, baseline, scale, color, fontWeight, fontStyle, outlineThickness, outlineColor, shadowOffset, shadowColor, fallback: false);
                 if (w != 0f)
                     return w;
             }
 
-            if (fallback)
-                return _main.DrawChar(handle, rune, baseline, scale, color, fallback: true);
+            if (fallback) // If none of the fonts in the stack could draw the character, use the main font's fallback
+                return _main.DrawChar(handle, rune, baseline, scale, color, fontWeight, fontStyle, outlineThickness, outlineColor, shadowOffset, shadowColor, fallback: true);
 
             return 0f;
         }
 
-        public override CharMetrics? GetCharMetrics(Rune rune, float scale, bool fallback=true)
+        public override CharMetrics? GetCharMetrics(Rune rune, float scale, FontWeight fontWeight = FontWeight.Normal, FontStyle fontStyle = FontStyle.Normal, float outlineThickness = 0f, bool fallback=true)
         {
             foreach (var f in Stack)
             {
-                var m = f.GetCharMetrics(rune, scale, fallback: false);
+                var m = f.GetCharMetrics(rune, scale, fontWeight, fontStyle, outlineThickness, fallback: false);
                 if (m != null)
                     return m;
             }
 
             if (!Rune.IsWhiteSpace(rune) && fallback)
-                return _main.GetCharMetrics(rune, scale, fallback: true);
+                return _main.GetCharMetrics(rune, scale, fontWeight, fontStyle, outlineThickness, fallback: true);
 
             return null;
         }
@@ -210,13 +320,22 @@ namespace Robust.Client.Graphics
         public override int GetDescent(float scale) => default;
         public override int GetLineHeight(float scale) => default;
 
-        public override float DrawChar(DrawingHandleBase handle, Rune rune, Vector2 baseline, float scale, Color color, bool fallback=true)
+        public override float DrawChar(
+            DrawingHandleBase handle, Rune rune, Vector2 baseline, float scale,
+            Color color,
+            FontWeight fontWeight = FontWeight.Normal,
+            FontStyle fontStyle = FontStyle.Normal,
+            float outlineThickness = 0f,
+            Color outlineColor = default,
+            Vector2 shadowOffset = default,
+            Color shadowColor = default,
+            bool fallback = true)
         {
             // Nada, it's a dummy after all.
             return 0;
         }
 
-        public override CharMetrics? GetCharMetrics(Rune rune, float scale, bool fallback=true)
+        public override CharMetrics? GetCharMetrics(Rune rune, float scale, FontWeight fontWeight = FontWeight.Normal, FontStyle fontStyle = FontStyle.Normal, float outlineThickness = 0f, bool fallback=true)
         {
             // Nada, it's a dummy after all.
             return null;

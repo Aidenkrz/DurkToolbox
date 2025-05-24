@@ -24,7 +24,9 @@ public sealed class MarkupTagManager
         new CommandLinkTag(),
         new FontTag(),
         new HeadingTag(),
-        new ItalicTag()
+        new ItalicTag(),
+        new OutlineTag(), // Added OutlineTag
+        new ShadowTag()   // Added ShadowTag
     }.ToDictionary(x => x.Name.ToLower(), x => x);
 
     /// <summary>
@@ -39,7 +41,9 @@ public sealed class MarkupTagManager
         typeof(CommandLinkTag),
         typeof(FontTag),
         typeof(HeadingTag),
-        typeof(ItalicTag)
+        typeof(ItalicTag),
+        typeof(OutlineTag), // Added OutlineTag
+        typeof(ShadowTag)   // Added ShadowTag
     };
 
     public void Initialize()

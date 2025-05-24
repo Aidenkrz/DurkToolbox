@@ -22,12 +22,10 @@ namespace Robust.Client.Graphics
 
     internal interface IFontInstanceHandle
     {
-
-
-        Texture? GetCharTexture(Rune codePoint, float scale);
-        Texture? GetCharTexture(char chr, float scale) => GetCharTexture((Rune) chr, scale);
-        CharMetrics? GetCharMetrics(Rune codePoint, float scale);
-        CharMetrics? GetCharMetrics(char chr, float scale) => GetCharMetrics((Rune) chr, scale);
+        Texture? GetCharTexture(Rune codePoint, float scale, FontWeight fontWeight = FontWeight.Normal, FontStyle fontStyle = FontStyle.Normal, float outlineThickness = 0f);
+        Texture? GetCharTexture(char chr, float scale, FontWeight fontWeight = FontWeight.Normal, FontStyle fontStyle = FontStyle.Normal, float outlineThickness = 0f) => GetCharTexture((Rune) chr, scale, fontWeight, fontStyle, outlineThickness);
+        CharMetrics? GetCharMetrics(Rune codePoint, float scale, FontWeight fontWeight = FontWeight.Normal, FontStyle fontStyle = FontStyle.Normal, float outlineThickness = 0f);
+        CharMetrics? GetCharMetrics(char chr, float scale, FontWeight fontWeight = FontWeight.Normal, FontStyle fontStyle = FontStyle.Normal, float outlineThickness = 0f) => GetCharMetrics((Rune) chr, scale, fontWeight, fontStyle, outlineThickness);
 
         int GetAscent(float scale);
         int GetDescent(float scale);

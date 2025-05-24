@@ -1,34 +1,25 @@
-using System.Linq;
-using Robust.Client.ResourceManagement;
-using Robust.Shared.IoC;
-using Robust.Shared.Prototypes;
+using Robust.Client.Graphics; // Required for FontWeight
 using Robust.Shared.Utility;
 
 namespace Robust.Client.UserInterface.RichText;
 
 public sealed class BoldTag : IMarkupTag
 {
-    public const string BoldFont = "DefaultBold";
-
-    [Dependency] private readonly IResourceCache _resourceCache = default!;
-    [Dependency] private readonly IPrototypeManager _prototypeManager = default!;
+    // No longer needs IResourceCache or IPrototypeManager for simple bolding.
+    // If it needed to load a specific "Bold Font" for some reason, those would be kept.
 
     public string Name => "bold";
 
     /// <inheritdoc/>
     public void PushDrawContext(MarkupNode node, MarkupDrawingContext context)
     {
-        var font = FontTag.CreateFont(context.Font, node, _resourceCache, _prototypeManager,
-            context.Tags.Any(static x => x is ItalicTag)
-                ? BoldItalicTag.BoldItalicFont
-                : BoldFont
-        );
-        context.Font.Push(font);
+        // Preserve current italic style, set weight to Bold
+        context.PushFontStyle(FontWeight.Bold, context.CurrentFontStyle);
     }
 
     /// <inheritdoc/>
     public void PopDrawContext(MarkupNode node, MarkupDrawingContext context)
     {
-        context.Font.Pop();
+        context.PopFontStyle();
     }
 }

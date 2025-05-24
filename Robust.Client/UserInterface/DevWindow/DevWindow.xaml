@@ -1,9 +1,11 @@
 ﻿<Control xmlns="https://spacestation14.io"
          xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+         xmlns:debugDecorations="clr-namespace:Robust.Client.UserInterface.CustomControls.DebugTextDecorations;assembly=Robust.Client"
          x:Class="Robust.Client.UserInterface.DevWindow">
     <TabContainer>
         <DebugConsole Name="DebugConsole" />
         <DevWindowTabUI Name="UI" />
         <DevWindowTabPerf Name="Perf" />
+        <debugDecorations:TextDecorationsDemo Name="TextDecorations" />
     </TabContainer>
 </Control>

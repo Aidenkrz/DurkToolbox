@@ -1,34 +1,24 @@
-using System.Linq;
-using Robust.Client.ResourceManagement;
-using Robust.Shared.IoC;
-using Robust.Shared.Prototypes;
+using Robust.Client.Graphics; // Required for FontStyle
 using Robust.Shared.Utility;
 
 namespace Robust.Client.UserInterface.RichText;
 
 public sealed class ItalicTag : IMarkupTag
 {
-    public const string ItalicFont = "DefaultItalic";
-
-    [Dependency] private readonly IResourceCache _resourceCache = default!;
-    [Dependency] private readonly IPrototypeManager _prototypeManager = default!;
+    // No longer needs IResourceCache or IPrototypeManager for simple italicizing.
 
     public string Name => "italic";
 
     /// <inheritdoc/>
     public void PushDrawContext(MarkupNode node, MarkupDrawingContext context)
     {
-        var font = FontTag.CreateFont(context.Font, node, _resourceCache, _prototypeManager,
-            context.Tags.Any(static x => x is BoldTag)
-                ? BoldItalicTag.BoldItalicFont
-                : ItalicFont
-        );
-        context.Font.Push(font);
+        // Preserve current bold style, set style to Italic
+        context.PushFontStyle(context.CurrentFontWeight, FontStyle.Italic);
     }
 
     /// <inheritdoc/>
     public void PopDrawContext(MarkupNode node, MarkupDrawingContext context)
     {
-        context.Font.Pop();
+        context.PopFontStyle();
     }
 }

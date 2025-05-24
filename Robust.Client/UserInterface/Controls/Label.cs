@@ -19,6 +19,12 @@ namespace Robust.Client.UserInterface.Controls
         public const string StylePropertyFontColor = "font-color";
         public const string StylePropertyFont = "font";
         public const string StylePropertyAlignMode = "alignMode";
+        public const string StylePropertyFontWeight = "font-weight";
+        public const string StylePropertyFontStyle = "font-style";
+        public const string StylePropertyOutlineThickness = "outline-thickness";
+        public const string StylePropertyOutlineColor = "outline-color";
+        public const string StylePropertyShadowOffset = "shadow-offset";
+        public const string StylePropertyShadowColor = "shadow-color";
 
         private int _cachedTextHeight;
         private readonly List<int> _cachedTextWidths = new();
@@ -154,6 +160,62 @@ namespace Robust.Client.UserInterface.Controls
 
         public int? ShadowOffsetYOverride { get; set; }
 
+        // New decoration properties
+        [ViewVariables(VVAccess.ReadWrite)]
+        [Animatable]
+        public FontWeight? FontWeightOverride { get; set; }
+
+        private FontWeight ActualFontWeight => FontWeightOverride ??
+                                             (TryGetStyleProperty<FontWeight>(StylePropertyFontWeight, out var value) ? value : Graphics.FontWeight.Normal);
+
+        [ViewVariables(VVAccess.ReadWrite)]
+        [Animatable]
+        public FontStyle? FontStyleOverride { get; set; }
+
+        private FontStyle ActualFontStyle => FontStyleOverride ??
+                                           (TryGetStyleProperty<FontStyle>(StylePropertyFontStyle, out var value) ? value : Graphics.FontStyle.Normal);
+
+        [ViewVariables(VVAccess.ReadWrite)]
+        [Animatable]
+        public float? OutlineThicknessOverride { get; set; }
+
+        private float ActualOutlineThickness => OutlineThicknessOverride ??
+                                                (TryGetStyleProperty<float>(StylePropertyOutlineThickness, out var value) ? value : 0f);
+
+        [ViewVariables(VVAccess.ReadWrite)]
+        [Animatable]
+        public Color? OutlineColorOverride { get; set; }
+
+        private Color ActualOutlineColor => OutlineColorOverride ??
+                                            (TryGetStyleProperty<Color>(StylePropertyOutlineColor, out var value) ? value : Color.Transparent);
+        [ViewVariables(VVAccess.ReadWrite)]
+        [Animatable]
+        public Vector2? ShadowOffsetOverride { get; set; }
+
+        // Note: ShadowOffsetXOverride and ShadowOffsetYOverride are legacy?
+        // New Vector2 ShadowOffset is more complete. For now, let's assume new property takes precedence if set.
+        private Vector2 ActualShadowOffset
+        {
+            get
+            {
+                if (ShadowOffsetOverride.HasValue) return ShadowOffsetOverride.Value;
+                if (TryGetStyleProperty<Vector2>(StylePropertyShadowOffset, out var value)) return value;
+                // Legacy fallback - consider if this is desired.
+                // For simplicity, I'm prioritizing the new Vector2 property.
+                // If ShadowOffsetXOverride or ShadowOffsetYOverride are set, they won't be used if StylePropertyShadowOffset or ShadowOffsetOverride is set.
+                if (ShadowOffsetXOverride.HasValue || ShadowOffsetYOverride.HasValue)
+                    return new Vector2(ShadowOffsetXOverride ?? 0, ShadowOffsetYOverride ?? 0);
+                return Vector2.Zero;
+            }
+        }
+
+        [ViewVariables(VVAccess.ReadWrite)]
+        [Animatable]
+        public Color? ShadowColorOverride { get; set; } // Renamed from FontColorShadowOverride for consistency
+
+        private Color ActualShadowColor => ShadowColorOverride ?? // Property formerly FontColorShadowOverride
+                                           (TryGetStyleProperty<Color>(StylePropertyShadowColor, out var value) ? value : Color.Transparent);
+
 
         protected internal override void Draw(DrawingHandleScreen handle)
         {
@@ -189,6 +251,14 @@ namespace Robust.Client.UserInterface.Controls
             var font = ActualFont;
             var actualFontColor = ActualFontColor;
 
+            // Get actual decoration values
+            var fontWeight = ActualFontWeight;
+            var fontStyle = ActualFontStyle;
+            var outlineThickness = ActualOutlineThickness;
+            var outlineColor = ActualOutlineColor;
+            var shadowOffset = ActualShadowOffset;
+            var shadowColor = ActualShadowColor;
+
             Vector2 CalcBaseline()
             {
                 DebugTools.Assert(_textDimensionCacheValid);
@@ -223,7 +293,8 @@ namespace Robust.Client.UserInterface.Controls
                     baseLine = CalcBaseline();
                 }
 
-                var advance = font.DrawChar(handle, rune, baseLine, UIScale, actualFontColor);
+                var advance = font.DrawChar(handle, rune, baseLine, UIScale, actualFontColor,
+                                            fontWeight, fontStyle, outlineThickness, outlineColor, shadowOffset, shadowColor);
                 baseLine += new Vector2(advance, 0);
             }
         }
@@ -286,17 +357,27 @@ namespace Robust.Client.UserInterface.Controls
             }
 
             var font = ActualFont;
-            var height = font.GetHeight(UIScale);
+
+            // Get actual decoration values relevant for metrics
+            var fontWeight = ActualFontWeight;
+            var fontStyle = ActualFontStyle;
+            var outlineThickness = ActualOutlineThickness;
+
+            var height = font.GetHeight(UIScale); // Base height, decorations might increase it effectively but GetHeight is per font.
+                                                 // Outline, for example, expands glyphs but GetHeight is usually about line spacing.
+                                                 // The per-glyph metrics will account for individual size changes.
+
             foreach (var rune in _textMemory.Span.EnumerateRunes())
             {
                 if (rune == new Rune('\n'))
                 {
                     _cachedTextWidths.Add(0);
-                    height += font.GetLineHeight(UIScale);
+                    height += font.GetLineHeight(UIScale); // Line height shouldn't change with style per se
                 }
                 else
                 {
-                    var metrics = font.GetCharMetrics(rune, UIScale);
+                    // Pass decoration parameters to GetCharMetrics
+                    var metrics = font.GetCharMetrics(rune, UIScale, fontWeight, fontStyle, outlineThickness);
                     if (metrics == null)
                     {
                         continue;
@@ -306,6 +387,9 @@ namespace Robust.Client.UserInterface.Controls
                 }
             }
 
+            // TODO: _cachedTextHeight might need to be adjusted if outlines/bold significantly increase perceived line height.
+            // For now, using font.GetLineHeight() and font.GetHeight() which are generally style-agnostic at the Font level.
+            // The individual glyphs are measured correctly. Total height for layout might need more thought if styles make lines taller.
             _cachedTextHeight = height;
             _textDimensionCacheValid = true;
         }

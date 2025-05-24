@@ -97,7 +97,18 @@ namespace Robust.Client.UserInterface.Controls
                 return;
             }
 
-            _entry.Draw(_tagManager, handle, _getFont(), SizeBox, 0, new MarkupDrawingContext(), UIScale, LineHeightScale);
+            var drawingContext = new MarkupDrawingContext();
+            // Initialize the context with the RichTextLabel's base font and default color.
+            // The default color for RichTextLabel isn't explicitly defined like Label's FontColorOverride.
+            // It might come from style or be a hardcoded default within RichTextEntry or FormattedMessage.
+            // For now, MarkupDrawingContext itself defaults CurrentColor to White, which is a common default.
+            // If RichTextLabel has a specific default color property, that should be used.
+            // Let's assume the default color is handled by _entry or the default in MarkupDrawingContext is sufficient.
+            drawingContext.CurrentFont = _getFont();
+            // If there's a way to get a "default color" for the label, set it here:
+            // drawingContext.CurrentColor = _getDefaultColor(); // Example
+
+            _entry.Draw(_tagManager, handle, drawingContext.CurrentFont, SizeBox, 0, drawingContext, UIScale, LineHeightScale);
         }
 
         [Pure]
