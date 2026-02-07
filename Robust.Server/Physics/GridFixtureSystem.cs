@@ -49,6 +49,8 @@ namespace Robust.Server.Physics
 
         private HashSet<EntityUid> _entSet = new();
 
+        private readonly Queue<ChunkSplitNode> _splitFrontier = new(4);
+
         private EntityQuery<MapGridComponent> _gridQuery;
         private EntityQuery<PhysicsComponent> _bodyQuery;
         private EntityQuery<TransformComponent> _xformQuery;
@@ -206,7 +208,7 @@ namespace Robust.Server.Physics
 
             _isSplitting = true;
             Log.Debug($"Started split check for {ToPrettyString(uid)}");
-            var splitFrontier = new Queue<ChunkSplitNode>(4);
+            _splitFrontier.Clear();
             var grids = new List<HashSet<ChunkSplitNode>>(1);
 
             while (dirtyNodes.Count > 0)
@@ -215,13 +217,13 @@ namespace Robust.Server.Physics
                 originEnumerator.MoveNext();
                 var origin = originEnumerator.Current;
                 originEnumerator.Dispose();
-                splitFrontier.Enqueue(origin);
+                _splitFrontier.Enqueue(origin);
                 var foundSplits = new HashSet<ChunkSplitNode>
                 {
                     origin
                 };
 
-                while (splitFrontier.TryDequeue(out var split))
+                while (_splitFrontier.TryDequeue(out var split))
                 {
                     dirtyNodes.Remove(split);
 
@@ -229,7 +231,7 @@ namespace Robust.Server.Physics
                     {
                         if (!foundSplits.Add(neighbor)) continue;
 
-                        splitFrontier.Enqueue(neighbor);
+                        _splitFrontier.Enqueue(neighbor);
                     }
                 }
 
@@ -248,9 +250,15 @@ namespace Robust.Server.Physics
 
                 // We'll leave the biggest group as the original grid
                 // anything smaller gets split off.
-                grids.Sort((x, y) =>
-                    x.Sum(o => o.Indices.Count)
-                        .CompareTo(y.Sum(o => o.Indices.Count)));
+                var gridSizes = new Dictionary<HashSet<ChunkSplitNode>, int>(grids.Count);
+                foreach (var sizeGroup in grids)
+                {
+                    var tileCount = 0;
+                    foreach (var sizeNode in sizeGroup)
+                        tileCount += sizeNode.Indices.Count;
+                    gridSizes[sizeGroup] = tileCount;
+                }
+                grids.Sort((x, y) => gridSizes[x].CompareTo(gridSizes[y]));
 
                 var oldGridXform = _xformQuery.GetComponent(oldGridUid);
                 var (gridPos, gridRot) = _xformSystem.GetWorldPositionRotation(oldGridXform);
@@ -274,7 +282,7 @@ namespace Robust.Server.Physics
                     _physics.SetAngularVelocity(newGridUid, mapBody.AngularVelocity, body: splitBody);
 
                     var gridComp = _gridQuery.GetComponent(newGridUid);
-                    var tileData = new List<(Vector2i GridIndices, Tile Tile)>(group.Sum(o => o.Indices.Count));
+                    var tileData = new List<(Vector2i GridIndices, Tile Tile)>(gridSizes[group]);
 
                     // Gather all tiles up front and set once to minimise fixture change events
                     foreach (var node in group)
