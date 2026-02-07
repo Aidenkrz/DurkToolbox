@@ -50,6 +50,7 @@ namespace Robust.Server.Physics
         private HashSet<EntityUid> _entSet = new();
 
         private readonly Queue<ChunkSplitNode> _splitFrontier = new(4);
+        private readonly List<HashSet<ChunkSplitNode>> _splitGrids = new(1);
 
         private EntityQuery<MapGridComponent> _gridQuery;
         private EntityQuery<PhysicsComponent> _bodyQuery;
@@ -199,6 +200,7 @@ namespace Robust.Server.Physics
         private void CheckSplits(EntityUid uid, HashSet<ChunkSplitNode> dirtyNodes)
         {
             // TODO: We already have mapgrid elsewhere
+            // trycomp is O(1) so not a big deal, and would require changing method signatures to pass mapgrid around everywhere so this isnt really worth it :shrug:
             if (_isSplitting || !SplitAllowed ||
                !TryComp<MapGridComponent>(uid, out var grid) ||
                !grid.CanSplit)
@@ -209,7 +211,7 @@ namespace Robust.Server.Physics
             _isSplitting = true;
             Log.Debug($"Started split check for {ToPrettyString(uid)}");
             _splitFrontier.Clear();
-            var grids = new List<HashSet<ChunkSplitNode>>(1);
+            _splitGrids.Clear();
 
             while (dirtyNodes.Count > 0)
             {
@@ -235,9 +237,10 @@ namespace Robust.Server.Physics
                     }
                 }
 
-                grids.Add(foundSplits);
+                _splitGrids.Add(foundSplits);
             }
 
+            var grids = _splitGrids;
             var oldGrid = Comp<MapGridComponent>(uid);
             var oldGridUid = uid;
 
@@ -412,13 +415,14 @@ namespace Robust.Server.Physics
                 Chunk = chunk,
             };
 
-            var tiles = new HashSet<Vector2i>(chunk.ChunkSize * chunk.ChunkSize);
+            var tiles = new HashSet<Vector2i>(chunk.FilledTiles);
 
             for (var x = 0; x < chunk.ChunkSize; x++)
             {
                 for (var y = 0; y < chunk.ChunkSize; y++)
                 {
-                    tiles.Add(new Vector2i(x, y));
+                    if (!chunk.GetTile((ushort) x, (ushort) y).IsEmpty)
+                        tiles.Add(new Vector2i(x, y));
                 }
             }
 
@@ -477,11 +481,14 @@ namespace Robust.Server.Physics
 
             // Check each tile for node neighbours on other chunks (not possible for us to have neighbours on the same chunk
             // as they would already be in our node).
-            // TODO: This could be better (maybe only check edges of the chunk or something).
             foreach (var chunkNode in group.Nodes)
             {
                 foreach (var index in chunkNode.Indices)
                 {
+                    if (index.X != 0 && index.Y != 0 &&
+                        index.X != chunk.ChunkSize - 1 && index.Y != chunk.ChunkSize - 1)
+                        continue;
+
                     // Check for edge tiles.
                     if (index.X == 0)
                     {
